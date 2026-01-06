@@ -16,7 +16,6 @@ import {
   Legend,
 } from "recharts";
 import {
-  Upload,
   Building2,
   Filter,
   Hash,
@@ -26,6 +25,9 @@ import {
   FileSpreadsheet,
   RefreshCcw,
 } from "lucide-react";
+
+// ✅ لوقو ثابت
+import logo from "./assets/Logotw.png";
 
 import { readExcelFile } from "./excel"; // احتياطي
 import { SHEET_CSV_URLS, loadRowsFromPublishedCSV } from "./sheets";
@@ -56,8 +58,8 @@ const SCALE_COLORS = {
 const sum = (arr) => arr.reduce((a, b) => a + (Number(b) || 0), 0);
 const formatNumber = (n) => (Number(n) || 0).toLocaleString("ar-SA");
 
-// مرن: أي مؤشر يحتوي كلمة "فيديو" يعتبر فيديوهات
-const isVideoMetric = (m = "") => String(m || "").includes("فيديو");
+// ✅ مرن: أي مؤشر يحتوي كلمة "فيديو" يعتبر فيديوهات (مع trim)
+const isVideoMetric = (m = "") => String(m || "").trim().includes("فيديو");
 
 /** حساب quantiles (25%/50%/75%) لتلوين تلقائي حسب توزيع البيانات */
 function getQuantile(sorted, q) {
@@ -93,7 +95,7 @@ function makeColorByValue(values) {
 }
 
 /* =========================================================
-   3) UI Components (نفس تصميمك)
+   3) UI Components
    ========================================================= */
 function Card({ children, className = "" }) {
   return (
@@ -169,35 +171,20 @@ function Select({ value, onChange, options, label }) {
    4) App
    ========================================================= */
 export default function App() {
-  /* -----------------------------
-     (A) State
-     ----------------------------- */
   const YEARS = Object.keys(SHEET_CSV_URLS);
   const [year, setYear] = useState(YEARS[0] || "2025");
 
   const [stage, setStage] = useState("الكل");
   const [week, setWeek] = useState("الكل");
 
-  const [logoUrl, setLogoUrl] = useState("");
   const [rows, setRows] = useState([]);
   const [excelName, setExcelName] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
 
-  const logoRef = useRef(null);
   const excelRef = useRef(null);
 
   /* -----------------------------
-     (B) Logo Upload
-     ----------------------------- */
-  const onPickLogo = () => logoRef.current?.click();
-  const onLogoChange = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setLogoUrl(URL.createObjectURL(file));
-  };
-
-  /* -----------------------------
-     (C) Load from Google Sheets (CSV Published)
+     (C) Load from Google Sheets
      ----------------------------- */
   async function loadFromSheet(selectedYear = year) {
     setErrorMsg("");
@@ -213,7 +200,6 @@ export default function App() {
       setRows(parsed);
       setExcelName(`Google Sheet ${selectedYear}`);
 
-      // لو المرحلة المختارة ما صارت موجودة بعد التحديث، ارجع للكل
       const stagesInFile = new Set(parsed.map((r) => r.stage));
       if (stage !== "الكل" && !stagesInFile.has(stage)) setStage("الكل");
     } catch (e) {
@@ -222,14 +208,13 @@ export default function App() {
     }
   }
 
-  // تحميل تلقائي عند فتح الصفحة + تغيير السنة
   useEffect(() => {
     loadFromSheet(year);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [year]);
 
   /* -----------------------------
-     (D) Excel Upload (Backup)
+     (D) Excel Backup
      ----------------------------- */
   const onPickExcel = () => excelRef.current?.click();
   const onExcelChange = async (e) => {
@@ -256,21 +241,19 @@ export default function App() {
   const hasData = rows.length > 0;
 
   /* =========================================================
-     5) ديناميكية المراحل (بدل STAGES الثابتة)
+     5) ديناميكية المراحل
      ========================================================= */
   const dynamicStages = useMemo(() => {
     const set = new Set(rows.map((r) => r.stage).filter(Boolean));
-
     const ordered = [
       ...PREFERRED_STAGE_ORDER.filter((s) => set.has(s)),
       ...Array.from(set).filter((s) => !PREFERRED_STAGE_ORDER.includes(s)),
     ];
-
     return ["الكل", ...ordered];
   }, [rows]);
 
   /* =========================================================
-     6) فلترة البيانات حسب المرحلة
+     6) فلترة حسب المرحلة
      ========================================================= */
   const filteredRows = useMemo(() => {
     if (stage === "الكل") return rows;
@@ -278,7 +261,7 @@ export default function App() {
   }, [rows, stage]);
 
   /* =========================================================
-     7) Helper: القراءة حسب الأسبوع
+     7) Helper: حسب الأسبوع
      ========================================================= */
   const pickByWeek = (row) => {
     if (!row) return 0;
@@ -287,7 +270,7 @@ export default function App() {
   };
 
   /* =========================================================
-     8) KPIs (كلمات/ساعات/أشخاص)
+     8) KPIs
      ========================================================= */
   const totals = useMemo(() => {
     const words = sum(
@@ -303,9 +286,7 @@ export default function App() {
   }, [filteredRows, week]);
 
   /* =========================================================
-     9) KPI: مجموع الفيديوهات المصورة
-     - دائمًا من مرحلة التصوير
-     - مرن: أي مؤشر يحتوي "فيديو"
+     9) KPI: الفيديوهات (دائمًا من التصوير)
      ========================================================= */
   const totalVideos = useMemo(() => {
     const videoRows = rows.filter(
@@ -315,7 +296,7 @@ export default function App() {
   }, [rows, week]);
 
   /* =========================================================
-     10) Line Chart: الكلمات عبر الأسابيع + تلوين النقاط
+     10) Line Chart
      ========================================================= */
   const lineWordsByWeek = useMemo(() => {
     const weeks = ["week1", "w2", "w3", "w4"];
@@ -332,7 +313,7 @@ export default function App() {
   );
 
   /* =========================================================
-     11) Bar Chart: مقارنة الأشخاص والساعات بين المراحل + تلوين الأعمدة
+     11) Bar Chart people/hours
      ========================================================= */
   const barPeopleHoursByStage = useMemo(() => {
     const stagesOnly = dynamicStages.filter((s) => s !== "الكل");
@@ -356,7 +337,7 @@ export default function App() {
   );
 
   /* =========================================================
-     12) Stacked Bar: الكلمات حسب المرحلة لكل أسبوع (ديناميكي)
+     12) Stacked Bar
      ========================================================= */
   const stackedStagesOnly = useMemo(
     () => dynamicStages.filter((s) => s !== "الكل"),
@@ -394,7 +375,7 @@ export default function App() {
   }, [stackedStagesOnly]);
 
   /* =========================================================
-     13) Donut: توزيع الكلمات بين المراحل + تلوين حسب القيمة
+     13) Donut
      ========================================================= */
   const donutWordsByStage = useMemo(() => {
     const findWordRow = (st) =>
@@ -411,9 +392,6 @@ export default function App() {
     [donutWordsByStage]
   );
 
-  /* =========================================================
-     14) Render
-     ========================================================= */
   return (
     <div dir="rtl" className="min-h-screen bg-emerald-50/40">
       {/* ================= Header ================= */}
@@ -422,15 +400,12 @@ export default function App() {
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div className="flex items-center gap-3">
               <div className="h-12 w-12 rounded-2xl bg-emerald-50 border border-emerald-100 grid place-items-center overflow-hidden">
-                {logoUrl ? (
-                  <img
-                    src={logoUrl}
-                    alt="logo"
-                    className="h-full w-full object-contain p-1"
-                  />
-                ) : (
-                  <Building2 className="h-6 w-6 text-emerald-700" />
-                )}
+                {/* ✅ لوقو ثابت */}
+                <img
+                  src={logo}
+                  alt="logo"
+                  className="h-full w-full object-contain p-1"
+                />
               </div>
 
               <div>
@@ -444,22 +419,6 @@ export default function App() {
             </div>
 
             <div className="flex items-center gap-2 flex-wrap">
-              {/* Logo */}
-              <input
-                ref={logoRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={onLogoChange}
-              />
-              <button
-                onClick={onPickLogo}
-                className="h-10 rounded-xl bg-emerald-600 px-3 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700 transition inline-flex items-center gap-2"
-              >
-                <Upload className="h-4 w-4" />
-                إضافة لوقو
-              </button>
-
               {/* Refresh from Sheets */}
               <button
                 onClick={() => loadFromSheet(year)}
@@ -523,14 +482,12 @@ export default function App() {
                   onChange={setYear}
                   options={YEARS.length ? YEARS : ["2025"]}
                 />
-
                 <Select
                   label="المرحلة"
                   value={stage}
                   onChange={setStage}
                   options={dynamicStages}
                 />
-
                 <Select
                   label="الأسبوع"
                   value={week}
@@ -579,7 +536,6 @@ export default function App() {
             value={totals.people}
             hint={`${year} • ${stage} • ${week}`}
           />
-          {/* ✅ الفيديوهات: دائمًا مجموع التصوير + مرن بالاسم */}
           <KPI
             icon={Video}
             label="مجموع الفيديوهات المصورة"
@@ -590,7 +546,6 @@ export default function App() {
 
         {/* ================= Charts ================= */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {/* ---- Line Chart ---- */}
           <Card className="p-4">
             <div className="mb-3">
               <div className="text-base font-semibold text-slate-800">
@@ -624,7 +579,6 @@ export default function App() {
             </div>
           </Card>
 
-          {/* ---- Bar Chart people vs hours ---- */}
           <Card className="p-4">
             <div className="mb-3">
               <div className="text-base font-semibold text-slate-800">
@@ -642,10 +596,7 @@ export default function App() {
                   <Legend />
                   <Bar dataKey="people" name="الأشخاص" radius={[8, 8, 0, 0]}>
                     {barPeopleHoursByStage.map((entry, idx) => (
-                      <Cell
-                        key={`p-${idx}`}
-                        fill={colorPeople(entry.people)}
-                      />
+                      <Cell key={`p-${idx}`} fill={colorPeople(entry.people)} />
                     ))}
                   </Bar>
                   <Bar dataKey="hours" name="الساعات" radius={[8, 8, 0, 0]}>
@@ -658,7 +609,6 @@ export default function App() {
             </div>
           </Card>
 
-          {/* ---- Stacked Bar words per stage per week ---- */}
           <Card className="p-4">
             <div className="mb-3">
               <div className="text-base font-semibold text-slate-800">
@@ -688,7 +638,6 @@ export default function App() {
             </div>
           </Card>
 
-          {/* ---- Donut ---- */}
           <Card className="p-4">
             <div className="mb-3">
               <div className="text-base font-semibold text-slate-800">
