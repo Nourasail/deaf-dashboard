@@ -199,6 +199,77 @@ function parseCSVLine(line) {
 // قراءة CSV وتحويله إلى Rows للداشبورد
 // (Pivot + Sum لكل الأيام داخل نفس الأسبوع)
 // ================================
+// export async function loadRowsFromPublishedCSV(csvUrl) {
+//   const res = await fetch(csvUrl, { cache: "no-store" });
+//   if (!res.ok) throw new Error("فشل تحميل CSV من Google Sheets");
+
+//   const text = await res.text();
+//   const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
+//   if (lines.length < 2) return [];
+
+//   const headers = parseCSVLine(lines[0]);
+
+//   // ✅ دالة للبحث عن اسم العمود حتى لو فيه مسافات
+//   const idx = (name) =>
+//     headers.findIndex((h) => String(h).replace(/\s+/g, "").trim() === String(name).replace(/\s+/g, "").trim());
+
+//   // أعمدة شيتك
+//   const monthIdx = idx("الشهر");
+//   const weekIdx = idx("الأسبوع");
+//   const dayIdx = idx("اليوم"); // موجود لكن ما نحتاجه للتجميع الأسبوعي
+//   const stageIdx = idx("المراحل");
+//   const metricIdx = idx("المؤشر");
+//   const valueIdx = idx("القيمة");
+
+//   if (
+//     monthIdx === -1 ||
+//     weekIdx === -1 ||
+//     stageIdx === -1 ||
+//     metricIdx === -1 ||
+//     valueIdx === -1
+//   ) {
+//     throw new Error("الأعمدة المطلوبة: الشهر | الأسبوع | اليوم | المراحل | المؤشر | القيمة");
+//   }
+
+//   // ✅ Pivot تجميعي: مفتاح = الشهر + المرحلة + المؤشر
+//   // ونجمع قيم كل أسبوع داخل week1/w2/w3/w4
+//   const map = new Map();
+
+//   for (let i = 1; i < lines.length; i++) {
+//     const cols = parseCSVLine(lines[i]);
+
+//     const month = (cols[monthIdx] || "").trim();
+//     const stage = (cols[stageIdx] || "").trim();
+//     const metric = (cols[metricIdx] || "").trim();
+//     const weekLabel = (cols[weekIdx] || "").trim();
+//     const weekKey = WEEK_MAP[weekLabel];
+//     const value = toNumber(cols[valueIdx]);
+
+//     if (!stage || !metric || !weekKey) continue;
+
+//     const key = `${month}||${stage}||${metric}`;
+//     if (!map.has(key)) {
+//       map.set(key, {
+//         month, // نخليه موجود (لو تبين فلتر شهر مستقبلاً)
+//         stage,
+//         metric,
+//         week1: 0,
+//         w2: 0,
+//         w3: 0,
+//         w4: 0,
+//       });
+//     }
+
+//     // ✅ هنا المهم: نجمع (+=) بدل الاستبدال
+//     map.get(key)[weekKey] += value;
+//   }
+
+//   // مخرجات الداشبورد
+//   return Array.from(map.values());
+// }
+
+
+
 export async function loadRowsFromPublishedCSV(csvUrl) {
   const res = await fetch(csvUrl, { cache: "no-store" });
   if (!res.ok) throw new Error("فشل تحميل CSV من Google Sheets");
@@ -209,61 +280,47 @@ export async function loadRowsFromPublishedCSV(csvUrl) {
 
   const headers = parseCSVLine(lines[0]);
 
-  // ✅ دالة للبحث عن اسم العمود حتى لو فيه مسافات
   const idx = (name) =>
-    headers.findIndex((h) => String(h).replace(/\s+/g, "").trim() === String(name).replace(/\s+/g, "").trim());
+    headers.findIndex((h) =>
+      String(h).replace(/\s+/g, "").trim() ===
+      String(name).replace(/\s+/g, "").trim()
+    );
 
-  // أعمدة شيتك
+  const yearIdx = idx("السنة");
   const monthIdx = idx("الشهر");
   const weekIdx = idx("الأسبوع");
-  const dayIdx = idx("اليوم"); // موجود لكن ما نحتاجه للتجميع الأسبوعي
+  const dayIdx = idx("اليوم");
   const stageIdx = idx("المراحل");
   const metricIdx = idx("المؤشر");
   const valueIdx = idx("القيمة");
 
   if (
+    yearIdx === -1 ||
     monthIdx === -1 ||
     weekIdx === -1 ||
     stageIdx === -1 ||
     metricIdx === -1 ||
     valueIdx === -1
   ) {
-    throw new Error("الأعمدة المطلوبة: الشهر | الأسبوع | اليوم | المراحل | المؤشر | القيمة");
+    throw new Error("الأعمدة المطلوبة غير مكتملة");
   }
 
-  // ✅ Pivot تجميعي: مفتاح = الشهر + المرحلة + المؤشر
-  // ونجمع قيم كل أسبوع داخل week1/w2/w3/w4
-  const map = new Map();
+  const rows = [];
 
   for (let i = 1; i < lines.length; i++) {
     const cols = parseCSVLine(lines[i]);
 
-    const month = (cols[monthIdx] || "").trim();
-    const stage = (cols[stageIdx] || "").trim();
-    const metric = (cols[metricIdx] || "").trim();
-    const weekLabel = (cols[weekIdx] || "").trim();
-    const weekKey = WEEK_MAP[weekLabel];
-    const value = toNumber(cols[valueIdx]);
-
-    if (!stage || !metric || !weekKey) continue;
-
-    const key = `${month}||${stage}||${metric}`;
-    if (!map.has(key)) {
-      map.set(key, {
-        month, // نخليه موجود (لو تبين فلتر شهر مستقبلاً)
-        stage,
-        metric,
-        week1: 0,
-        w2: 0,
-        w3: 0,
-        w4: 0,
-      });
-    }
-
-    // ✅ هنا المهم: نجمع (+=) بدل الاستبدال
-    map.get(key)[weekKey] += value;
+    rows.push({
+      year: (cols[yearIdx] || "").trim(),
+      month: (cols[monthIdx] || "").trim(),
+      weekLabel: (cols[weekIdx] || "").trim(),
+      weekKey: WEEK_MAP[(cols[weekIdx] || "").trim()],
+      day: (cols[dayIdx] || "").trim(),
+      stage: (cols[stageIdx] || "").trim(),
+      metric: (cols[metricIdx] || "").trim(),
+      value: toNumber(cols[valueIdx]),
+    });
   }
 
-  // مخرجات الداشبورد
-  return Array.from(map.values());
+  return rows;
 }

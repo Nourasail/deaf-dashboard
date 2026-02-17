@@ -1,5 +1,5 @@
 // src/App.jsx
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   LineChart,
   Line,
@@ -10,721 +10,511 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
   Legend,
 } from "recharts";
-import {
-  Building2,
-  Filter,
-  Hash,
-  Clock3,
-  Users,
-  Video,
-  FileSpreadsheet,
-  RefreshCcw,
-} from "lucide-react";
-
-// ✅ لوقو ثابت
+import { Hash, Users, Video, Eye, EyeOff, Info } from "lucide-react";
 import logo from "./assets/Logotw.png";
-
-import { readExcelFile } from "./excel"; // احتياطي
 import { SHEET_CSV_URLS, loadRowsFromPublishedCSV } from "./sheets";
 
-/* =========================================================
-   1) ثوابت عامة
-   ========================================================= */
-const WEEKS = ["الكل", "week1", "w2", "w3", "w4"];
+/* ========================= Helpers ========================= */
 
-// ترتيب مفضل للمراحل (إذا موجودة في البيانات تظهر بهذا الترتيب)
-const PREFERRED_STAGE_ORDER = [
-  "مرحلة التصوير",
-  "مرحلة التسمية",
-  "مرحلة المراجعة والتدقيق",
-];
-
-// ألوان التدرج حسب القيمة: أدنى = أحمر .. أعلى = أخضر
-const SCALE_COLORS = {
-  low: "#ef4444", // أحمر
-  mid1: "#f97316", // برتقالي
-  mid2: "#3b82f6", // أزرق
-  high: "#22c55e", // أخضر
-};
-
-/* =========================================================
-   2) Helpers (جمع/تنسيق + تلوين حسب القيم)
-   ========================================================= */
-const sum = (arr) => arr.reduce((a, b) => a + (Number(b) || 0), 0);
 const formatNumber = (n) => (Number(n) || 0).toLocaleString("ar-SA");
 
-// ✅ مرن: أي مؤشر يحتوي كلمة "فيديو" يعتبر فيديوهات (مع trim)
-const isVideoMetric = (m = "") => String(m || "").trim().includes("فيديو");
+const WEEK_LABELS = {
+  week1: "الأسبوع الأول",
+  w2: "الأسبوع الثاني",
+  w3: "الأسبوع الثالث",
+  w4: "الأسبوع الرابع",
+};
 
-/** حساب quantiles (25%/50%/75%) لتلوين تلقائي حسب توزيع البيانات */
-function getQuantile(sorted, q) {
-  if (!sorted.length) return 0;
-  const pos = (sorted.length - 1) * q;
-  const base = Math.floor(pos);
-  const rest = pos - base;
-  return sorted[base + 1] !== undefined
-    ? sorted[base] + rest * (sorted[base + 1] - sorted[base])
-    : sorted[base];
-}
+const MONTH_ORDER = {
+  يناير: 1,
+  فبراير: 2,
+  مارس: 3,
+  أبريل: 4,
+  مايو: 5,
+  يونيو: 6,
+  يوليو: 7,
+  أغسطس: 8,
+  سبتمبر: 9,
+  أكتوبر: 10,
+  نوفمبر: 11,
+  ديسمبر: 12,
+};
 
-/** يرجع دالة لون: value -> color (أحمر/برتقالي/أزرق/أخضر) */
-function makeColorByValue(values) {
-  const nums = values
-    .map((v) => Number(v) || 0)
-    .filter((v) => Number.isFinite(v))
-    .sort((a, b) => a - b);
-
-  if (!nums.length) return () => SCALE_COLORS.high;
-
-  const q25 = getQuantile(nums, 0.25);
-  const q50 = getQuantile(nums, 0.5);
-  const q75 = getQuantile(nums, 0.75);
-
-  return (v) => {
-    const x = Number(v) || 0;
-    if (x <= q25) return SCALE_COLORS.low;
-    if (x <= q50) return SCALE_COLORS.mid1;
-    if (x <= q75) return SCALE_COLORS.mid2;
-    return SCALE_COLORS.high;
-  };
-}
-
-/* =========================================================
-   3) UI Components
-   ========================================================= */
 function Card({ children, className = "" }) {
   return (
-    <div
-      className={`rounded-2xl bg-white shadow-sm border border-emerald-100 ${className}`}
-    >
+    <div className={`rounded-2xl bg-white shadow-sm border border-emerald-100 ${className}`}>
       {children}
     </div>
   );
 }
 
-function SectionTitle({ icon: Icon, title, subtitle }) {
-  return (
-    <div className="flex items-start gap-3">
-      <div className="mt-0.5 rounded-xl bg-emerald-50 border border-emerald-100 p-2">
-        <Icon className="h-5 w-5 text-emerald-700" />
-      </div>
-      <div>
-        <div className="text-base font-semibold text-slate-800">{title}</div>
-        {subtitle ? (
-          <div className="text-sm text-slate-500">{subtitle}</div>
-        ) : null}
-      </div>
-    </div>
-  );
-}
+function KPI({ icon: Icon, label, value, tone = "emerald" }) {
+  const toneMap = {
+    emerald: {
+      box: "bg-emerald-50 border-emerald-100",
+      icon: "text-emerald-700",
+    },
+    blue: {
+      box: "bg-blue-50 border-blue-100",
+      icon: "text-blue-700",
+    },
+    violet: {
+      box: "bg-violet-50 border-violet-100",
+      icon: "text-violet-700",
+    },
+  };
 
-function KPI({ icon: Icon, label, value, hint }) {
+  const t = toneMap[tone] || toneMap.emerald;
+
   return (
     <Card className="p-4">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-2">
-            <Icon className="h-5 w-5 text-emerald-700" />
-          </div>
-          <div>
-            <div className="text-sm text-slate-600">{label}</div>
-            <div className="text-2xl font-bold text-slate-900">
-              {formatNumber(value)}
-            </div>
-          </div>
+      <div className="flex items-center gap-3">
+        <div className={`rounded-xl border p-2 ${t.box}`}>
+          <Icon className={`h-5 w-5 ${t.icon}`} />
         </div>
-        {hint ? (
-          <span className="text-xs rounded-full bg-emerald-50 border border-emerald-100 px-2 py-1 text-emerald-800">
-            {hint}
-          </span>
-        ) : null}
+        <div>
+          <div className="text-sm text-slate-600">{label}</div>
+          <div className="text-2xl font-bold text-slate-900">{formatNumber(value)}</div>
+        </div>
       </div>
     </Card>
   );
 }
 
-function Select({ value, onChange, options, label }) {
+function Select({ value, onChange, options, label, type = "default" }) {
   return (
-    <label className="flex flex-col gap-1 min-w-[180px]">
+    <label className="flex flex-col gap-1 min-w-[160px]">
       <span className="text-xs text-slate-600">{label}</span>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="h-10 rounded-xl border border-emerald-100 bg-white px-3 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-emerald-200"
+        className="h-10 rounded-xl border border-emerald-100 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-emerald-200"
       >
-        {options.map((op) => (
-          <option key={op} value={op}>
-            {op}
-          </option>
-        ))}
+        {options.map((op) => {
+          let labelText = op;
+
+          if (type === "week") labelText = op === "الكل" ? "الكل" : WEEK_LABELS[op] || op;
+
+          return (
+            <option key={op} value={op}>
+              {labelText}
+            </option>
+          );
+        })}
       </select>
     </label>
   );
 }
 
-/* =========================================================
-   4) App
-   ========================================================= */
-export default function App() {
-  const YEARS = Object.keys(SHEET_CSV_URLS);
-  const [year, setYear] = useState(YEARS[0] || "2025");
+/* ========================= App ========================= */
 
-  const [stage, setStage] = useState("الكل");
+export default function App() {
+  // ✅ نخلي السنوات مرتبة (الأحدث أول)
+  const YEARS = useMemo(() => {
+    const ys = Object.keys(SHEET_CSV_URLS || {});
+    return ys.sort((a, b) => Number(b) - Number(a));
+  }, []);
+
+  // ✅ افتراضيًا: أحدث سنة
+  const [year, setYear] = useState(YEARS[0] || "2026");
+  const [month, setMonth] = useState("الكل");
   const [week, setWeek] = useState("الكل");
+  const [metric, setMetric] = useState("مجموع الفيديوهات المصورة");
 
   const [rows, setRows] = useState([]);
-  const [excelName, setExcelName] = useState("");
-  const [errorMsg, setErrorMsg] = useState("");
 
-  const excelRef = useRef(null);
+  /* ========================= Progress (Auto Target) ========================= */
 
-  /* -----------------------------
-     (C) Load from Google Sheets
-     ----------------------------- */
-  async function loadFromSheet(selectedYear = year) {
-    setErrorMsg("");
-    try {
-      const url = SHEET_CSV_URLS[selectedYear];
-      if (!url || url.includes("PUT_")) {
-        throw new Error(
-          "حط روابط CSV للسنة داخل src/sheets.js (Publish to web → CSV)"
-        );
-      }
+  // 🔒 خليها false قبل عرض المدير (تخفي حقول الإعدادات وأزرار التحكم)
+  const [adminMode] = useState(false);
 
-      const parsed = await loadRowsFromPublishedCSV(url);
-      setRows(parsed);
-      setExcelName(`Google Sheet ${selectedYear}`);
-
-      const stagesInFile = new Set(parsed.map((r) => r.stage));
-      if (stage !== "الكل" && !stagesInFile.has(stage)) setStage("الكل");
-    } catch (e) {
-      setRows([]);
-      setErrorMsg(e?.message || "فشل تحميل البيانات من Google Sheets");
-    }
-  }
+  const [remainingWords, setRemainingWords] = useState(
+    Number(localStorage.getItem("remainingWords")) || 1159
+  );
+  const [repeatPerWord, setRepeatPerWord] = useState(
+    Number(localStorage.getItem("repeatPerWord")) || 15
+  );
+  const [showProgress, setShowProgress] = useState(
+    localStorage.getItem("showProgress") !== "false"
+  );
 
   useEffect(() => {
-    loadFromSheet(year);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    localStorage.setItem("remainingWords", String(remainingWords || 0));
+  }, [remainingWords]);
+
+  useEffect(() => {
+    localStorage.setItem("repeatPerWord", String(repeatPerWord || 0));
+  }, [repeatPerWord]);
+
+  useEffect(() => {
+    localStorage.setItem("showProgress", String(showProgress));
+  }, [showProgress]);
+
+  /* ========================= Load Data ========================= */
+
+  useEffect(() => {
+    async function load() {
+      const parsed = await loadRowsFromPublishedCSV(SHEET_CSV_URLS[year]);
+      setRows(parsed);
+    }
+    load();
   }, [year]);
 
-  /* -----------------------------
-     (D) Excel Backup
-     ----------------------------- */
-  const onPickExcel = () => excelRef.current?.click();
-  const onExcelChange = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setErrorMsg("");
+  /* ========================= Dynamic Months + Weeks ========================= */
 
-    try {
-      const parsed = await readExcelFile(file);
-      setRows(parsed);
-      setExcelName(file.name);
-
-      const stagesInFile = new Set(parsed.map((r) => r.stage));
-      if (stage !== "الكل" && !stagesInFile.has(stage)) setStage("الكل");
-    } catch (err) {
-      setRows([]);
-      setExcelName(file.name);
-      setErrorMsg(err?.message || "حدث خطأ أثناء قراءة ملف Excel");
-    } finally {
-      e.target.value = "";
-    }
-  };
-
-  const hasData = rows.length > 0;
-
-  /* =========================================================
-     5) ديناميكية المراحل
-     ========================================================= */
-  const dynamicStages = useMemo(() => {
-    const set = new Set(rows.map((r) => r.stage).filter(Boolean));
-    const ordered = [
-      ...PREFERRED_STAGE_ORDER.filter((s) => set.has(s)),
-      ...Array.from(set).filter((s) => !PREFERRED_STAGE_ORDER.includes(s)),
-    ];
+  const dynamicMonths = useMemo(() => {
+    const set = new Set(rows.map((r) => r.month).filter(Boolean));
+    const ordered = Array.from(set).sort((a, b) => {
+      const aa = MONTH_ORDER[a] || 99;
+      const bb = MONTH_ORDER[b] || 99;
+      return aa - bb;
+    });
     return ["الكل", ...ordered];
   }, [rows]);
 
-  /* =========================================================
-     6) فلترة حسب المرحلة
-     ========================================================= */
+  const dynamicWeeks = useMemo(() => {
+    const set = new Set(rows.map((r) => r.weekKey).filter(Boolean));
+    const order = ["week1", "w2", "w3", "w4"];
+    const ordered = order.filter((w) => set.has(w));
+    return ["الكل", ...ordered];
+  }, [rows]);
+
+  // ✅ Auto-select أحدث شهر/أسبوع عند فتح الداشبورد (بدون ما تضغطين)
+  useEffect(() => {
+    if (!rows.length) return;
+
+    // إذا المستخدم ما اختار شيء (لسه "الكل") نخليه يروح للأحدث تلقائيًا
+    if (month === "الكل") {
+      const months = rows
+        .map((r) => r.month)
+        .filter(Boolean)
+        .sort((a, b) => (MONTH_ORDER[b] || 0) - (MONTH_ORDER[a] || 0));
+      if (months[0]) setMonth(months[0]);
+    }
+
+    // بعد اختيار الشهر تلقائيًا، لو الأسبوع "الكل" نخليه على أحدث أسبوع موجود داخل الشهر
+    // (مرّة وحدة) عشان يطلع لك بيانات قريبة من "اليوم"
+    // ملاحظة: إذا تبين يبقى "الكل" دائمًا احذفي هذا الجزء.
+    if (week === "الكل") {
+      const inMonth = rows.filter((r) => (month === "الكل" ? true : r.month === month));
+      const order = ["week1", "w2", "w3", "w4"];
+      const weeks = inMonth
+        .map((r) => r.weekKey)
+        .filter(Boolean);
+      const latest = [...new Set(weeks)].sort(
+        (a, b) => order.indexOf(b) - order.indexOf(a)
+      )[0];
+      if (latest) setWeek(latest);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows]);
+
+  /* ========================= Filtering ========================= */
+
   const filteredRows = useMemo(() => {
-    if (stage === "الكل") return rows;
-    return rows.filter((r) => r.stage === stage);
-  }, [rows, stage]);
+    return rows.filter((r) => {
+      if (r.year !== year) return false;
+      if (month !== "الكل" && r.month !== month) return false;
+      if (week !== "الكل" && r.weekKey !== week) return false;
+      return true;
+    });
+  }, [rows, year, month, week]);
 
-  /* =========================================================
-     7) Helper: حسب الأسبوع
-     ========================================================= */
-  const pickByWeek = (row) => {
-    if (!row) return 0;
-    if (week === "الكل") return sum([row.week1, row.w2, row.w3, row.w4]);
-    return Number(row[week]) || 0;
-  };
+  /* ========================= KPI ========================= */
 
-  /* =========================================================
-     8) KPIs
-     ========================================================= */
   const totals = useMemo(() => {
-    const words = sum(
-      filteredRows.filter((r) => r.metric === "عدد الكلمات").map(pickByWeek)
-    );
-    const hours = sum(
-      filteredRows.filter((r) => r.metric === "عدد الساعات").map(pickByWeek)
-    );
-    const people = sum(
-      filteredRows.filter((r) => r.metric === "عدد الأشخاص").map(pickByWeek)
-    );
-    return { words, hours, people };
-  }, [filteredRows, week]);
+    const people = filteredRows
+      .filter((r) => r.metric === "عدد الأشخاص")
+      .reduce((s, r) => s + r.value, 0);
 
-  /* =========================================================
-     9) KPI: الفيديوهات (دائمًا من التصوير)
-     ========================================================= */
-  const totalVideos = useMemo(() => {
-    const videoRows = rows.filter(
-      (r) => r.stage === "مرحلة التصوير" && isVideoMetric(r.metric)
-    );
-    return sum(videoRows.map(pickByWeek));
-  }, [rows, week]);
+    const words = filteredRows
+      .filter((r) => r.metric === "عدد الكلمات")
+      .reduce((s, r) => s + r.value, 0);
 
-  /* =========================================================
-     10) Line Chart
-     ========================================================= */
-  const lineWordsByWeek = useMemo(() => {
-    const weeks = ["week1", "w2", "w3", "w4"];
-    const wordRows = filteredRows.filter((r) => r.metric === "عدد الكلمات");
-    return weeks.map((w) => ({
-      week: w,
-      value: sum(wordRows.map((r) => Number(r[w]) || 0)),
-    }));
+    const videos = filteredRows
+      .filter((r) => r.metric === "مجموع الفيديوهات المصورة")
+      .reduce((s, r) => s + r.value, 0);
+
+    return { people, words, videos };
   }, [filteredRows]);
 
-  const colorLine = useMemo(
-    () => makeColorByValue(lineWordsByWeek.map((d) => d.value)),
-    [lineWordsByWeek]
-  );
+  /* ========================= Progress ========================= */
 
-  /* =========================================================
-     11) Bar Chart people/hours
-     ========================================================= */
-  const barPeopleHoursByStage = useMemo(() => {
-    const stagesOnly = dynamicStages.filter((s) => s !== "الكل");
-    const findRow = (st, metric) =>
-      rows.find((r) => r.stage === st && r.metric === metric);
+  const targetVideos = useMemo(() => {
+    const w = Number(remainingWords) || 0;
+    const r = Number(repeatPerWord) || 0;
+    return w * r;
+  }, [remainingWords, repeatPerWord]);
 
-    return stagesOnly.map((st) => ({
-      stage: st.replace("مرحلة ", ""),
-      people: pickByWeek(findRow(st, "عدد الأشخاص")),
-      hours: pickByWeek(findRow(st, "عدد الساعات")),
-    }));
-  }, [rows, week, dynamicStages]);
+  // ✅ المنجز: سنة كاملة (عشان يكون “تقدم مشروع”)
+  const totalVideosYear = useMemo(() => {
+    return rows
+      .filter((r) => r.metric === "مجموع الفيديوهات المصورة")
+      .reduce((s, r) => s + r.value, 0);
+  }, [rows]);
 
-  const colorPeople = useMemo(
-    () => makeColorByValue(barPeopleHoursByStage.map((d) => d.people)),
-    [barPeopleHoursByStage]
-  );
-  const colorHours = useMemo(
-    () => makeColorByValue(barPeopleHoursByStage.map((d) => d.hours)),
-    [barPeopleHoursByStage]
-  );
+  const progressPercent =
+    targetVideos > 0 ? Math.min((totalVideosYear / targetVideos) * 100, 100) : 0;
 
-  /* =========================================================
-     12) Stacked Bar
-     ========================================================= */
-  const stackedStagesOnly = useMemo(
-    () => dynamicStages.filter((s) => s !== "الكل"),
-    [dynamicStages]
-  );
+  const remainingVideos = Math.max(targetVideos - totalVideosYear, 0);
 
-  const stackedWordsStageByWeek = useMemo(() => {
-    const weeks = ["week1", "w2", "w3", "w4"];
-    const findWordRow = (st) =>
-      rows.find((r) => r.stage === st && r.metric === "عدد الكلمات");
+  /* ========================= Chart #1 (selected metric) ========================= */
 
-    return weeks.map((w) => {
-      const obj = { week: w };
-      stackedStagesOnly.forEach((st) => {
-        obj[st] = Number(findWordRow(st)?.[w] || 0);
+  const metricOverTime = useMemo(() => {
+    const map = {};
+    filteredRows
+      .filter((r) => r.metric === metric)
+      .forEach((r) => {
+        const key = week !== "الكل" ? r.day : r.weekLabel;
+        if (!map[key]) map[key] = 0;
+        map[key] += r.value;
       });
-      return obj;
-    });
-  }, [rows, stackedStagesOnly]);
 
-  const stackedStageColors = useMemo(() => {
-    const palette = [
-      "#059669",
-      "#10b981",
-      "#34d399",
-      "#06b6d4",
-      "#3b82f6",
-      "#a855f7",
-    ];
-    const map = new Map();
-    stackedStagesOnly.forEach((st, idx) =>
-      map.set(st, palette[idx % palette.length])
-    );
-    return map;
-  }, [stackedStagesOnly]);
-
-  /* =========================================================
-     13) Donut
-     ========================================================= */
-  const donutWordsByStage = useMemo(() => {
-    const findWordRow = (st) =>
-      rows.find((r) => r.stage === st && r.metric === "عدد الكلمات");
-    return stackedStagesOnly.map((st) => ({
-      name: st.replace("مرحلة ", ""),
-      value: pickByWeek(findWordRow(st)),
-      _stageKey: st,
+    return Object.keys(map).map((k) => ({
+      label: k,
+      value: map[k],
     }));
-  }, [rows, week, stackedStagesOnly]);
+  }, [filteredRows, week, metric]);
 
-  const colorDonut = useMemo(
-    () => makeColorByValue(donutWordsByStage.map((d) => d.value)),
-    [donutWordsByStage]
-  );
+  /* ========================= Chart #2 (3 metrics grouped) ========================= */
+
+  const threeMetricsOverTime = useMemo(() => {
+    const keyFn = (r) => (week !== "الكل" ? r.day : r.weekLabel);
+
+    const map = new Map(); // key -> {label, people, words, videos}
+    for (const r of filteredRows) {
+      const label = keyFn(r);
+      if (!label) continue;
+
+      if (!map.has(label)) {
+        map.set(label, { label, people: 0, words: 0, videos: 0 });
+      }
+      const obj = map.get(label);
+
+      if (r.metric === "عدد الأشخاص") obj.people += r.value;
+      if (r.metric === "عدد الكلمات") obj.words += r.value;
+      if (r.metric === "مجموع الفيديوهات المصورة") obj.videos += r.value;
+    }
+
+    return Array.from(map.values());
+  }, [filteredRows, week]);
+
+  /* ========================= UI ========================= */
 
   return (
     <div dir="rtl" className="min-h-screen bg-emerald-50/40">
-      {/* ================= Header ================= */}
-      <div className="sticky top-0 z-20 backdrop-blur bg-white/80 border-b border-emerald-100">
-        <div className="mx-auto max-w-7xl px-4 py-4 flex flex-col gap-3">
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <div className="flex items-center gap-3">
-              <div className="h-12 w-12 rounded-2xl bg-emerald-50 border border-emerald-100 grid place-items-center overflow-hidden">
-                {/* ✅ لوقو ثابت */}
-                <img
-                  src={logo}
-                  alt="logo"
-                  className="h-full w-full object-contain p-1"
-                />
-              </div>
-
-              <div>
-                <div className="text-lg md:text-xl font-bold text-slate-900">
-                  Dashboard – مؤشرات مشروع الصم
-                </div>
-                <div className="text-sm text-slate-600">
-                  By Noura Saad - Proudct specialist
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 flex-wrap">
-              {/* Refresh from Sheets */}
-              <button
-                onClick={() => loadFromSheet(year)}
-                className="h-10 rounded-xl bg-white px-3 text-sm font-semibold text-emerald-700 border border-emerald-200 hover:bg-emerald-50 transition inline-flex items-center gap-2"
-                title="تحديث من Google Sheets"
-              >
-                <RefreshCcw className="h-4 w-4" />
-                تحديث
-              </button>
-
-              {/* Excel Backup */}
-              <input
-                ref={excelRef}
-                type="file"
-                accept=".xlsx,.xls"
-                className="hidden"
-                onChange={onExcelChange}
-              />
-              <button
-                onClick={onPickExcel}
-                className="h-10 rounded-xl bg-white px-3 text-sm font-semibold text-emerald-700 border border-emerald-200 hover:bg-emerald-50 transition inline-flex items-center gap-2"
-                title="احتياطي: رفع Excel"
-              >
-                <FileSpreadsheet className="h-4 w-4" />
-                رفع Excel
-              </button>
-
-              <div className="text-xs text-slate-600 flex items-center gap-2">
-                <RefreshCcw className="h-4 w-4 text-emerald-700" />
-                {excelName ? (
-                  <span className="truncate max-w-[260px]">
-                    المصدر الحالي:{" "}
-                    <span className="font-semibold">{excelName}</span>
-                  </span>
-                ) : (
-                  <span>لم يتم تحميل بيانات بعد</span>
-                )}
+      {/* Header */}
+      <div className="bg-white border-b border-emerald-100">
+        <div className="mx-auto max-w-7xl px-4 py-4 flex justify-between items-center flex-wrap gap-4">
+          <div className="flex items-center gap-3">
+            <img src={logo} alt="logo" className="h-10" />
+            <div>
+              <div className="text-lg font-bold text-slate-900">مؤشرات مشروع الصم</div>
+              <div className="text-sm text-slate-600">Noura Saad – Product Specialist</div>
+              <div className="mt-1 inline-flex items-center gap-1 text-xs rounded-full bg-emerald-50 border border-emerald-100 px-2 py-1 text-emerald-800">
+                <Info className="h-3.5 w-3.5" />
+                ملاحظة: بداية احتساب الداشبورد من ديسمبر 2025 إلى الآن
               </div>
             </div>
           </div>
 
-          {/* Error */}
-          {errorMsg ? (
-            <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
-              {errorMsg}
-            </div>
-          ) : null}
-
-          {/* ================= Filters ================= */}
-          <Card className="p-3">
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <SectionTitle
-                icon={Filter}
-                title="الفلاتر"
-                subtitle="السنة/المرحلة/الأسبوع"
-              />
-              <div className="flex gap-3 flex-wrap items-end">
-                <Select
-                  label="السنة"
-                  value={year}
-                  onChange={setYear}
-                  options={YEARS.length ? YEARS : ["2025"]}
-                />
-                <Select
-                  label="المرحلة"
-                  value={stage}
-                  onChange={setStage}
-                  options={dynamicStages}
-                />
-                <Select
-                  label="الأسبوع"
-                  value={week}
-                  onChange={setWeek}
-                  options={WEEKS}
-                />
-              </div>
-            </div>
-          </Card>
+          <div className="flex gap-3 flex-wrap">
+            <Select label="السنة" value={year} onChange={setYear} options={YEARS} />
+            <Select label="الشهر" value={month} onChange={setMonth} options={dynamicMonths} />
+            <Select
+              label="الأسبوع"
+              value={week}
+              onChange={setWeek}
+              options={dynamicWeeks}
+              type="week"
+            />
+            <Select
+              label="المؤشر"
+              value={metric}
+              onChange={setMetric}
+              options={["عدد الأشخاص", "عدد الكلمات", "مجموع الفيديوهات المصورة"]}
+            />
+          </div>
         </div>
       </div>
 
-      {/* ================= Body ================= */}
       <div className="mx-auto max-w-7xl px-4 py-6 space-y-6">
-        {!hasData ? (
-          <Card className="p-6">
-            <div className="text-slate-700 font-semibold mb-2">
-              لا توجد بيانات بعد
+        {/* ===== Progress Section ===== */}
+        {showProgress && targetVideos > 0 && (
+          <Card className="p-4">
+            <div className="flex justify-between items-center mb-2 flex-wrap gap-2">
+              <div className="font-semibold text-slate-800">تقدم المشروع الكلي</div>
+
+              {adminMode && (
+                <button
+                  onClick={() => setShowProgress(false)}
+                  className="text-emerald-700 flex items-center gap-1 text-sm"
+                  title="إخفاء هذا القسم"
+                >
+                  <EyeOff size={16} /> إخفاء
+                </button>
+              )}
             </div>
-            <div className="text-sm text-slate-600 leading-6">
-              ✅ تأكد أنك فعلت{" "}
-              <span className="font-semibold">Publish to web → CSV</span> لكل
-              سنة، وحطيت الروابط داخل{" "}
-              <span className="font-semibold">src/sheets.js</span>.
+
+            {/* ✅ هنا تكبير/تلوين الكلمات المتبقية */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-sm text-slate-700 mb-3">
+              <div className="rounded-xl border border-emerald-100 bg-emerald-50/40 p-3">
+                <div className="text-xs text-slate-600 mb-1">الهدف (فيديو)</div>
+                <div className="font-bold">{formatNumber(targetVideos)}</div>
+                <div className="text-xs text-slate-500 mt-1">
+                  = {formatNumber(remainingWords)} كلمة × {formatNumber(repeatPerWord)} تكرار
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-emerald-100 bg-emerald-50/40 p-3">
+                <div className="text-xs text-slate-600 mb-1">المنجز حتى الآن</div>
+                <div className="font-bold">{formatNumber(totalVideosYear)}</div>
+              </div>
+
+              <div className="rounded-xl border border-emerald-100 bg-emerald-50/40 p-3">
+                <div className="text-xs text-slate-600 mb-1">المتبقي (فيديو)</div>
+                <div className="font-bold">{formatNumber(remainingVideos)}</div>
+              </div>
+
+              <div className="rounded-xl border border-red-200 bg-red-50 p-3">
+                <div className="text-xs text-red-700 mb-1">الكلمات المتبقية</div>
+                <div className="text-2xl font-extrabold text-red-700">
+                  {formatNumber(remainingWords)}
+                </div>
+              </div>
+            </div>
+
+            <div className="w-full h-4 bg-emerald-50 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-emerald-600 transition-all duration-500"
+                style={{ width: `${progressPercent}%` }}
+              />
+            </div>
+
+            <div className="text-xs mt-2 text-slate-600">
+              نسبة الإنجاز: {progressPercent.toFixed(1)}%
             </div>
           </Card>
-        ) : null}
+        )}
 
-        {/* ================= KPIs ================= */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <KPI
-            icon={Hash}
-            label="إجمالي الكلمات"
-            value={totals.words}
-            hint={`${year} • ${stage} • ${week}`}
-          />
-          <KPI
-            icon={Clock3}
-            label="إجمالي الساعات"
-            value={totals.hours}
-            hint={`${year} • ${stage} • ${week}`}
-          />
-          <KPI
-            icon={Users}
-            label="عدد الأشخاص"
-            value={totals.people}
-            hint={`${year} • ${stage} • ${week}`}
-          />
-          <KPI
-            icon={Video}
-            label="مجموع الفيديوهات المصورة"
-            value={totalVideos}
-            hint="مرحلة التصوير"
-          />
+        {adminMode && !showProgress && (
+          <button
+            onClick={() => setShowProgress(true)}
+            className="text-emerald-700 flex items-center gap-1 text-sm"
+            title="إظهار قسم التقدم"
+          >
+            <Eye size={16} /> إظهار قسم التقدم
+          </button>
+        )}
+
+        {adminMode && (
+          <Card className="p-4">
+            <div className="font-semibold text-slate-800 mb-3">إعدادات الهدف (لك فقط)</div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 items-end">
+              <label className="flex flex-col gap-1">
+                <span className="text-xs text-slate-600">الكلمات المتبقية</span>
+                <input
+                  type="number"
+                  value={remainingWords}
+                  onChange={(e) => setRemainingWords(Number(e.target.value))}
+                  className="h-10 rounded-xl border border-emerald-100 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-emerald-200"
+                />
+              </label>
+
+              <label className="flex flex-col gap-1">
+                <span className="text-xs text-slate-600">عدد التكرار لكل كلمة</span>
+                <input
+                  type="number"
+                  value={repeatPerWord}
+                  onChange={(e) => setRepeatPerWord(Number(e.target.value))}
+                  className="h-10 rounded-xl border border-emerald-100 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-emerald-200"
+                />
+              </label>
+
+              <div className="text-sm text-slate-700">
+                <div className="text-xs text-slate-600 mb-1">الهدف الناتج</div>
+                <div className="font-bold text-slate-900">{formatNumber(targetVideos)} فيديو</div>
+              </div>
+            </div>
+
+            <div className="text-xs text-slate-500 mt-3 leading-6">
+              💡 لإخفاء قسم التقدم قبل عرض الداشبورد للمدير: فعّلي adminMode مؤقتًا ثم اضغطي “إخفاء”.
+            </div>
+          </Card>
+        )}
+
+        {/* KPI */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <KPI icon={Users} label="عدد الأشخاص" value={totals.people} tone="emerald" />
+          <KPI icon={Hash} label="عدد الكلمات" value={totals.words} tone="violet" />
+          <KPI icon={Video} label="مجموع الفيديوهات المصورة" value={totals.videos} tone="blue" />
         </div>
 
-        {/* ================= Charts ================= */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <Card className="p-4">
-            <div className="mb-3">
-              <div className="text-base font-semibold text-slate-800">
-                الكلمات عبر الأسابيع
-              </div>
-              <div className="text-sm text-slate-500">Line Chart</div>
-            </div>
-            <div className="h-72">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={lineWordsByWeek}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="week" />
-                  <YAxis />
-                  <Tooltip />
-                  <Line
-                    type="monotone"
-                    dataKey="value"
-                    stroke="#059669"
-                    strokeWidth={3}
-                    dot={({ cx, cy, payload }) => (
-                      <circle
-                        cx={cx}
-                        cy={cy}
-                        r={5}
-                        fill={colorLine(payload.value)}
-                      />
-                    )}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </Card>
-
-          <Card className="p-4">
-            <div className="mb-3">
-              <div className="text-base font-semibold text-slate-800">
-                مقارنة الأشخاص والساعات بين المراحل
-              </div>
-              <div className="text-sm text-slate-500">Bar Chart</div>
-            </div>
-            <div className="h-72">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={barPeopleHoursByStage}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="stage" />
-                  <YAxis />
-                  <Tooltip />
-                  <Legend />
-                  <Bar dataKey="people" name="الأشخاص" radius={[8, 8, 0, 0]}>
-                    {barPeopleHoursByStage.map((entry, idx) => (
-                      <Cell key={`p-${idx}`} fill={colorPeople(entry.people)} />
-                    ))}
-                  </Bar>
-                  <Bar dataKey="hours" name="الساعات" radius={[8, 8, 0, 0]}>
-                    {barPeopleHoursByStage.map((entry, idx) => (
-                      <Cell key={`h-${idx}`} fill={colorHours(entry.hours)} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </Card>
-
-          <Card className="p-4">
-            <div className="mb-3">
-              <div className="text-base font-semibold text-slate-800">
-                الكلمات حسب المرحلة لكل أسبوع
-              </div>
-              <div className="text-sm text-slate-500">Stacked Bar</div>
-            </div>
-            <div className="h-72">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={stackedWordsStageByWeek}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="week" />
-                  <YAxis />
-                  <Tooltip />
-                  <Legend />
-                  {stackedStagesOnly.map((st) => (
-                    <Bar
-                      key={st}
-                      dataKey={st}
-                      stackId="a"
-                      fill={stackedStageColors.get(st)}
-                      name={st.replace("مرحلة ", "")}
-                    />
-                  ))}
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </Card>
-
-          <Card className="p-4">
-            <div className="mb-3">
-              <div className="text-base font-semibold text-slate-800">
-                توزيع الكلمات بين المراحل
-              </div>
-              <div className="text-sm text-slate-500">Donut Chart</div>
-            </div>
-
-            {stage !== "الكل" ? (
-              <div className="h-72 grid place-items-center rounded-xl border border-emerald-100 bg-emerald-50/40 text-slate-600 text-sm">
-                اختر <span className="font-semibold mx-1">المرحلة: الكل</span>{" "}
-                لعرض التوزيع
-              </div>
-            ) : (
-              <div className="h-72">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Tooltip />
-                    <Legend />
-                    <Pie
-                      data={donutWordsByStage}
-                      dataKey="value"
-                      nameKey="name"
-                      innerRadius={60}
-                      outerRadius={95}
-                      paddingAngle={2}
-                    >
-                      {donutWordsByStage.map((entry, idx) => (
-                        <Cell key={idx} fill={colorDonut(entry.value)} />
-                      ))}
-                    </Pie>
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-          </Card>
-        </div>
-
-        {/* ================= Table ================= */}
+        {/* Chart #1 */}
         <Card className="p-4">
-          <div className="mb-3">
-            <div className="text-base font-semibold text-slate-800">
-              الجدول التفصيلي
-            </div>
-            <div className="text-sm text-slate-500">
-              المرحلة | المؤشر | week1 | w2 | w3 | w4 | الإجمالي
-            </div>
+          <div className="mb-3 font-semibold text-slate-800">{metric} عبر الزمن</div>
+          <div className="h-80">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={metricOverTime}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="label" />
+                <YAxis />
+                <Tooltip />
+                <Line type="monotone" dataKey="value" stroke="#059669" strokeWidth={3} />
+              </LineChart>
+            </ResponsiveContainer>
           </div>
+        </Card>
+
+        {/* Chart #2 */}
+        <Card className="p-4">
+          <div className="mb-3 font-semibold text-slate-800">
+            مقارنة المؤشرات الثلاثة عبر {week !== "الكل" ? "الأيام" : "الأسابيع"}
+          </div>
+          <div className="h-80">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={threeMetricsOverTime}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="label" />
+                <YAxis />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="people" name="عدد الأشخاص" fill="#059669" radius={[8, 8, 0, 0]} />
+                <Bar dataKey="words" name="عدد الكلمات" fill="#7c3aed" radius={[8, 8, 0, 0]} />
+                <Bar dataKey="videos" name="مجموع الفيديوهات" fill="#2563eb" radius={[8, 8, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </Card>
+
+        {/* Table */}
+        <Card className="p-4">
+          <div className="mb-3 font-semibold text-slate-800">جدول تفصيلي</div>
 
           <div className="overflow-auto rounded-xl border border-emerald-100">
             <table className="min-w-full text-sm">
               <thead className="bg-emerald-50">
-                <tr className="text-slate-700">
-                  <th className="text-right px-3 py-2 font-semibold">المرحلة</th>
-                  <th className="text-right px-3 py-2 font-semibold">المؤشر</th>
-                  <th className="text-right px-3 py-2 font-semibold">week1</th>
-                  <th className="text-right px-3 py-2 font-semibold">w2</th>
-                  <th className="text-right px-3 py-2 font-semibold">w3</th>
-                  <th className="text-right px-3 py-2 font-semibold">w4</th>
-                  <th className="text-right px-3 py-2 font-semibold">الإجمالي</th>
+                <tr>
+                  <th className="px-3 py-2 text-right">الشهر</th>
+                  <th className="px-3 py-2 text-right">الأسبوع</th>
+                  <th className="px-3 py-2 text-right">اليوم</th>
+                  <th className="px-3 py-2 text-right">المؤشر</th>
+                  <th className="px-3 py-2 text-right">القيمة</th>
                 </tr>
               </thead>
-
               <tbody>
-                {filteredRows.map((r, idx) => {
-                  const total = sum([r.week1, r.w2, r.w3, r.w4]);
-                  return (
-                    <tr
-                      key={idx}
-                      className="border-t border-emerald-100 hover:bg-emerald-50/40 transition"
-                    >
-                      <td className="px-3 py-2 text-slate-800 whitespace-nowrap">
-                        {r.stage}
-                      </td>
-                      <td className="px-3 py-2 text-slate-700 whitespace-nowrap">
-                        {r.metric}
-                      </td>
-                      <td className="px-3 py-2">{formatNumber(r.week1)}</td>
-                      <td className="px-3 py-2">{formatNumber(r.w2)}</td>
-                      <td className="px-3 py-2">{formatNumber(r.w3)}</td>
-                      <td className="px-3 py-2">{formatNumber(r.w4)}</td>
-                      <td className="px-3 py-2 font-semibold text-slate-900">
-                        {formatNumber(total)}
-                      </td>
-                    </tr>
-                  );
-                })}
+                {filteredRows.map((r, i) => (
+                  <tr key={i} className="border-t border-emerald-100 hover:bg-emerald-50/40">
+                    <td className="px-3 py-2">{r.month}</td>
+                    <td className="px-3 py-2">{r.weekLabel}</td>
+                    <td className="px-3 py-2">{r.day}</td>
+                    <td className="px-3 py-2">{r.metric}</td>
+                    <td className="px-3 py-2 font-semibold">{formatNumber(r.value)}</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
